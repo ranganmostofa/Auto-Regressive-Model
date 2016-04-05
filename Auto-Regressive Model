@@ -1,0 +1,207 @@
+import java.util.List;
+
+/**
+ * Created by ragibmostofa on 4/3/16.
+ */
+public class AutoRegressive
+{
+    public double mean(List<Double> data)
+    {
+        double sum = 0.0, avg;
+        for (Double data_point: data)
+        {
+            sum = sum + data_point;
+        }
+        avg = sum / (data.size());
+        return avg;
+    }
+
+    public double variance(List<Double> data)
+    {
+        double sum = 0.0, avg = mean(data), var;
+
+        for (Double data_point: data)
+        {
+            sum = sum + Math.pow((data_point - avg), 2);
+        }
+
+        var = sum / data.size();
+        return var;
+    }
+
+    public double autoCorrelationFunction(List<Double> data, int timeLag)
+    {
+        double var = variance(data), avg = mean(data), sum = 0.0;
+
+        if (timeLag == 0) return 1.0;
+
+        for (int t = timeLag;t < data.size();t++)
+        {
+            sum = sum + (data.get(t) - avg) * (data.get(t - timeLag) - avg);
+        }
+
+        double num = sum / data.size();
+
+        return num / var;
+    }
+
+    public double GaussianWhiteNoise(double x, List<Double> data)
+    {
+        return (1 / Math.sqrt(2.0 * Math.PI * variance(data)) * Math.exp(-Math.pow(x, 2.0) / 2.0 / variance(data)));
+    }
+
+    public Double [][] YuleWalkerMatrixGenerator(List<Double> data, int order)
+    {
+        Double [][] YuleWalkerMatrix = new Double[order][order];
+
+        for (int i = 0;i < order;i++)
+        {
+            for (int j = 0;j < order;j++)
+            {
+                YuleWalkerMatrix[i][j] = autoCorrelationFunction(data, Math.abs(i - j));
+            }
+        }
+
+        return YuleWalkerMatrix;
+    }
+
+    public  Double [] autoCorrelationVectorGenerator(List<Double> data, int order)
+    {
+        Double [] autoCorrelationVector = new Double[order];
+
+        for (int i = 0;i < order;i++)
+        {
+            autoCorrelationVector[i] = autoCorrelationFunction(data, i + 1);
+        }
+
+        return autoCorrelationVector;
+    }
+
+    public Double [][] identityMatrix(int size)
+    {
+        Double [][] identity = new Double [size][size];
+
+        for (int i = 0; i < size; i++)
+        {
+            for (int j = 0; j < size; j++)
+            {
+                if (i == j) identity[i][j] = 1.0;
+
+                else identity[i][j] = 0.0;
+            }
+        }
+
+        return identity;
+    }
+
+    public Double [][] rowAddition(int firstRowNumber, int secondRowNumber, double factor, Double [][] matrix)
+    {
+        int columnSize = matrix.length;
+        Double [][] matrixCopy = matrix;
+
+        if (factor == 0.0 || (firstRowNumber < 0 || firstRowNumber >= columnSize) ||
+                (secondRowNumber < 0 || secondRowNumber >= columnSize) ||
+                (firstRowNumber == secondRowNumber)) return matrixCopy;
+
+        for (int columnNumber = 0;columnNumber < columnSize;columnNumber++)
+        {
+            matrixCopy[firstRowNumber][columnNumber] += factor * matrix[secondRowNumber][columnNumber];
+        }
+
+        return matrixCopy;
+    }
+
+    public Double [][] rowMultiplication(int rowNumber, double factor, Double [][] matrix)
+    {
+        int columnSize = matrix[rowNumber].length;
+        Double [][] matrixCopy = matrix;
+
+        if (factor == 0.0 || (rowNumber < 0 || rowNumber >= columnSize)) return matrixCopy;
+
+        for (int columnNumber = 0;columnNumber < columnSize;columnNumber++)
+        {
+            matrixCopy[rowNumber][columnNumber] *= factor;
+        }
+
+        return matrixCopy;
+    }
+
+    public Double [][] matrixInverter(Double [][] matrix)
+    {
+        int matrixSize = matrix.length;
+        Double [][] matrixCopy = matrix;
+        Double [][] inverse = identityMatrix(matrix.length);
+
+        for (int i = 0;i < matrixSize;i++)
+        {
+            inverse = rowMultiplication(i, 1.0/matrixCopy[i][i], inverse);
+            matrixCopy = rowMultiplication(i, 1.0/matrixCopy[i][i], matrixCopy);
+            for (int j = 0;j < matrixSize;j++)
+            {
+                if (i != j)
+                {
+                    if (matrixCopy[j][i] != 0.0)
+                    {
+                        inverse = rowAddition(j, i, -matrixCopy[j][i], inverse);
+                        matrixCopy = rowAddition(j, i, -matrixCopy[j][i], matrixCopy);
+                    }
+                }
+            }
+        }
+
+        return inverse;
+    }
+
+    public Double [] matrixVectorMultiplier(Double [][] matrix, Double [] vector)
+    {
+        int dim = vector.length;
+        double product;
+        Double [] productVector = new Double[dim];
+
+        for (int i = 0;i < dim;i++)
+        {
+            product = 0.0;
+            for (int j = 0;j < dim;j++)
+            {
+                product += matrix[i][j] * vector[j];
+            }
+            productVector[i] = product;
+        }
+
+        return productVector;
+    }
+
+    public Double [] autoRegressiveCoefficientsCalculator(int order, List<Double> data)
+    {
+        Double [][] autoCorrelationMatrix = YuleWalkerMatrixGenerator(data, order);
+        Double [][] autoCorrelationMatrixInverse = matrixInverter(autoCorrelationMatrix);
+
+        Double [] autoCorrelationVector = autoCorrelationVectorGenerator(data, order);
+
+        return matrixVectorMultiplier(autoCorrelationMatrixInverse, autoCorrelationVector);
+    }
+
+    public double autoRegressiveModel(int order, List<Double> sharePrice)
+    {
+        Double [] autoRegressiveCoefficients = autoRegressiveCoefficientsCalculator(order, sharePrice);
+
+        int idx = order;
+        int pricesLength = sharePrice.size();
+        int coefficientsLength = autoRegressiveCoefficients.length;
+
+        double total = 0.0;
+        double predictedPrice;
+        double whiteNoise;
+
+        for (;idx > 0; idx--)
+        {
+            total += autoRegressiveCoefficients[coefficientsLength - idx] * sharePrice.get(pricesLength - idx);
+        }
+
+        whiteNoise = GaussianWhiteNoise(pricesLength + 1, sharePrice);
+
+        predictedPrice = whiteNoise + total;
+
+        return predictedPrice;
+    }
+}
